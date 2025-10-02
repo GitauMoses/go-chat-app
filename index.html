@@ -1,0 +1,256 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Chat App</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f7fa;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        header {
+            padding: 10px;
+            background: #4a90e2;
+            color: white;
+            text-align: center;
+            font-size: 20px;
+        }
+        #auth {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex: 1;
+        }
+        #auth form {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            width: 300px;
+        }
+        #auth input {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        #auth button {
+            width: 100%;
+            padding: 10px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #main {
+            flex: 1;
+            display: none;
+            overflow: hidden;
+        }
+        #users {
+            width: 250px;
+            background: #fff;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+        }
+        .user {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .user span.status {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: red;
+            margin-left: 10px;
+        }
+        .user.online span.status {
+            background: green;
+        }
+        #chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #f9f9f9;
+        }
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .msg {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #e6f0ff;
+            border-radius: 6px;
+            max-width: 60%;
+        }
+        .msg.self {
+            background: #d1ffd6;
+            margin-left: auto;
+        }
+        #input {
+            display: flex;
+            border-top: 1px solid #ddd;
+        }
+        #input input {
+            flex: 1;
+            border: none;
+            padding: 10px;
+        }
+        #input button {
+            padding: 10px;
+            border: none;
+            background: #4a90e2;
+            color: white;
+            cursor: pointer;
+        }
+        @media(max-width: 768px) {
+            #users { width: 180px; }
+        }
+    </style>
+</head>
+<body>
+<header>Chat App</header>
+
+<div id="auth">
+    <form id="loginForm">
+        <h3>Login / Signup</h3>
+        <input type="text" id="username" placeholder="Username" required />
+        <input type="password" id="password" placeholder="Password" required />
+        <button type="submit">Enter</button>
+    </form>
+</div>
+
+<div id="main">
+    <div style="display:flex; height:100%">
+        <div id="users"></div>
+        <div id="chat">
+            <div id="messages"></div>
+            <div id="input">
+                <input type="text" id="messageBox" placeholder="Type a message..." />
+                <button id="sendBtn">Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = "http://127.0.0.1:8080"; // ✅ Fixed backend base
+    let currentUser = null;
+    let token = null;
+    let selectedUser = null;
+
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const username = document.getElementById("username").value.trim();
+        const password = document.getElementById("password").value.trim();
+
+        try {
+            // try login first
+            let res = await fetch(`${API_BASE}/api/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password })
+            });
+
+            if (!res.ok) {
+                // fallback: try register
+                res = await fetch(`${API_BASE}/api/register`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password })
+                });
+            }
+
+            if (!res.ok) throw new Error("Auth failed");
+            const data = await res.json();
+            token = data.token || null;
+            currentUser = username;
+
+            document.getElementById("auth").style.display = "none";
+            document.getElementById("main").style.display = "block";
+
+            loadUsers();
+            setInterval(loadUsers, 5000);
+        } catch (err) {
+            alert("Error: " + err.message);
+        }
+    });
+
+    async function loadUsers() {
+        try {
+            const res = await fetch(`${API_BASE}/api/users`, {
+                headers: token ? { "Authorization": `Bearer ${token}` } : {}
+            });
+            if (!res.ok) return;
+            const users = await res.json();
+            const list = document.getElementById("users");
+            list.innerHTML = "";
+            users.forEach(u => {
+                if (u.username === currentUser) return;
+                const div = document.createElement("div");
+                div.className = "user" + (u.online ? " online" : "");
+                div.innerHTML = `
+        <span>${u.username}</span>
+        <span class="status"></span>
+      `;
+                div.onclick = () => openChat(u.username);
+                list.appendChild(div);
+            });
+        } catch (err) {
+            console.error("Failed to load users", err);
+        }
+    }
+
+    function openChat(username) {
+        selectedUser = username;
+        document.getElementById("messages").innerHTML = `<p style="text-align:center;">Chat with ${username}</p>`;
+    }
+
+    document.getElementById("sendBtn").addEventListener("click", sendMessage);
+
+    async function sendMessage() {
+        const input = document.getElementById("messageBox");
+        const msg = input.value.trim();
+        if (!msg || !selectedUser) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/api/send`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({ to: selectedUser, message: msg })
+            });
+            if (res.ok) {
+                appendMessage(msg, true);
+                input.value = "";
+            }
+        } catch (err) {
+            console.error("Send failed", err);
+        }
+    }
+
+    function appendMessage(text, self=false) {
+        const div = document.createElement("div");
+        div.className = "msg" + (self ? " self" : "");
+        div.textContent = text;
+        document.getElementById("messages").appendChild(div);
+    }
+</script>
+</body>
+</html>
+```
