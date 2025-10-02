@@ -1,256 +1,967 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <title>Chat App</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Nexus Chat</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <style>
-        body {
+        /* Custom Tailwind Configuration for Signal Aesthetic */
+        :root {
+            --color-signal-primary: #FFFFFF;    /* Main Background/Chat Bubbles Received */
+            --color-signal-background: #f7f7f7; /* Sidebar/Body Background */
+            --color-signal-green: #075E54;      /* Signal Green Accent */
+            --color-signal-light-green: #DCF8C6;/* Sent Message Bubbles Background */
+            --color-signal-text: #1f1f1f;       /* Primary Text Color */
+            --color-signal-border: #e2e2e2;     /* Subtle Borders */
+        }
+
+        /* Define the primary font and full-screen layout */
+        html, body {
+            font-family: 'Inter', sans-serif;
+            height: 100%;
             margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f5f7fa;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-        header {
-            padding: 10px;
-            background: #4a90e2;
-            color: white;
-            text-align: center;
-            font-size: 20px;
-        }
-        #auth {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex: 1;
-        }
-        #auth form {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            width: 300px;
-        }
-        #auth input {
-            width: 100%;
-            padding: 10px;
-            margin: 8px 0;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        #auth button {
-            width: 100%;
-            padding: 10px;
-            background: #4a90e2;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        #main {
-            flex: 1;
-            display: none;
             overflow: hidden;
+            color: var(--color-signal-text);
         }
-        #users {
-            width: 250px;
-            background: #fff;
-            border-right: 1px solid #ddd;
-            overflow-y: auto;
+
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: var(--color-signal-background); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #b0b0b0; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #909090; }
+
+        /* Message Bubble Styling - Signal Style */
+        .message-bubble {
+            max-width: 80%;
+            margin: 4px 0;
+            padding: 8px 12px;
+            border-radius: 12px;
+            line-height: 1.4;
+            position: relative;
+            box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13); /* Subtle shadow for depth */
         }
-        .user {
-            padding: 10px;
-            border-bottom: 1px solid #eee;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .user span.status {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: red;
-            margin-left: 10px;
-        }
-        .user.online span.status {
-            background: green;
-        }
-        #chat {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: #f9f9f9;
-        }
-        #messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-        .msg {
-            margin-bottom: 10px;
-            padding: 8px;
-            background: #e6f0ff;
-            border-radius: 6px;
-            max-width: 60%;
-        }
-        .msg.self {
-            background: #d1ffd6;
+
+        /* Sent Messages (Green) */
+        .message-bubble.sent {
+            background-color: var(--color-signal-light-green);
+            color: var(--color-signal-text);
+            align-self: flex-end;
             margin-left: auto;
+            border-bottom-right-radius: 4px;
         }
-        #input {
-            display: flex;
-            border-top: 1px solid #ddd;
+
+        /* Received Messages (White/Light Gray) */
+        .message-bubble.received {
+            background-color: var(--color-signal-primary);
+            color: var(--color-signal-text);
+            align-self: flex-start;
+            margin-right: auto;
+            border: 1px solid var(--color-signal-border);
+            border-bottom-left-radius: 4px;
         }
-        #input input {
-            flex: 1;
-            border: none;
-            padding: 10px;
+
+        /* Pointer/Tail for bubbles (optional but nice) */
+        .message-bubble::before {
+            content: "";
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            pointer-events: none;
+            clip-path: polygon(0 0, 100% 0, 100% 100%);
         }
-        #input button {
-            padding: 10px;
-            border: none;
-            background: #4a90e2;
-            color: white;
-            cursor: pointer;
+        .message-bubble.sent::before {
+            background-color: var(--color-signal-light-green);
+            right: -11px;
+            top: 0;
+            transform: rotate(90deg);
         }
-        @media(max-width: 768px) {
-            #users { width: 180px; }
+        .message-bubble.received::before {
+            background-color: var(--color-signal-primary);
+            left: -11px;
+            top: 0;
+            transform: scaleX(-1) rotate(-90deg);
+        }
+
+        /* Main App Grid */
+        #main-app {
+            display: grid;
+            grid-template-columns: 350px 1fr; /* Fixed sidebar, flexible chat panel */
+            height: 100%;
+        }
+
+        /* Mobile View Management */
+        @media (max-width: 1023px) {
+            #main-app {
+                grid-template-columns: 1fr; /* Stacked */
+            }
+            #sidebar-panel {
+                width: 100%;
+                display: flex !important; /* Always display on mobile init */
+            }
+            #chat-panel {
+                display: none;
+                position: absolute; /* Hide chat panel entirely */
+                z-index: 10;
+                height: 100%;
+                width: 100%;
+            }
+            /* When chat is active, hide sidebar */
+            .mobile-chat-active #sidebar-panel { display: none !important; }
+            /* When chat is active, show chat panel */
+            .mobile-chat-active #chat-panel { display: flex !important; }
         }
     </style>
 </head>
-<body>
-<header>Chat App</header>
 
-<div id="auth">
-    <form id="loginForm">
-        <h3>Login / Signup</h3>
-        <input type="text" id="username" placeholder="Username" required />
-        <input type="password" id="password" placeholder="Password" required />
-        <button type="submit">Enter</button>
-    </form>
+<body class="bg-gray-100 min-h-screen flex flex-col antialiased" onload="listUsers()">
+
+<!-- 1. Authentication Screen (Default View) -->
+<div id="auth-screen" class="flex items-center justify-center min-h-screen bg-gray-50 p-4">
+    <div class="w-full max-w-sm bg-white p-8 rounded-2xl shadow-xl transition duration-300">
+        <h1 class="text-4xl font-extrabold mb-2 text-[--color-signal-green]">Signal Nexus</h1>
+        <p class="text-gray-500 mb-8">Sign in or create your clean chat account.</p>
+
+        <div id="auth-forms">
+            <h2 class="text-2xl font-semibold mb-6">Welcome Back</h2>
+
+            <input type="text" id="login-username" placeholder="Username" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-green-600 focus:border-green-600 mb-3 shadow-sm">
+            <input type="password" id="login-password" placeholder="Password" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-green-600 focus:border-green-600 mb-5 shadow-sm">
+
+            <button onclick="loginUser()" class="w-full bg-[--color-signal-green] hover:bg-[#054a43] text-white font-bold py-3 rounded-xl transition duration-200 shadow-md">
+                Log In
+            </button>
+        </div>
+
+        <div class="mt-8 pt-6 border-t border-gray-200">
+            <p class="text-sm text-gray-500 mb-3 text-center">New user? Register instantly.</p>
+            <div class="flex flex-col space-y-2">
+                <input type="text" id="reg-username" placeholder="New Username" class="p-3 text-sm border border-gray-300 rounded-xl focus:ring-green-600 focus:border-green-600 shadow-sm">
+                <input type="password" id="reg-password" placeholder="New Password" class="p-3 text-sm border border-gray-300 rounded-xl focus:ring-green-600 focus:border-green-600 shadow-sm">
+            </div>
+            <button onclick="registerUser()" class="w-full mt-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 rounded-xl transition duration-200">
+                Create Account
+            </button>
+        </div>
+
+        <!-- Log/Status Output for Auth Screen -->
+        <div id="auth-log-status" class="mt-6 text-xs h-16 overflow-y-auto custom-scrollbar border-t pt-3 text-gray-600"></div>
+    </div>
 </div>
 
-<div id="main">
-    <div style="display:flex; height:100%">
-        <div id="users"></div>
-        <div id="chat">
-            <div id="messages"></div>
-            <div id="input">
-                <input type="text" id="messageBox" placeholder="Type a message..." />
-                <button id="sendBtn">Send</button>
+<!-- 2. Main Chat Application Interface (Signal Layout) -->
+<div id="main-app" class="hidden">
+
+    <!-- Column 1: Sidebar (Chat List & Tabs) -->
+    <div id="sidebar-panel" class="flex flex-col border-r border-[--color-signal-border] bg-[--color-signal-background]">
+
+        <!-- Sidebar Header (User Profile & Actions) -->
+        <div class="p-3 border-b border-[--color-signal-border] flex items-center justify-between bg-white shadow-sm">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-gray-400 rounded-full flex items-center justify-center text-lg font-bold text-white shadow-md">
+                    <span id="current-username-initial">U</span>
+                </div>
+                <p class="font-semibold text-lg" id="current-username-footer"></p>
+            </div>
+            <!-- Icons for New Chat & More -->
+            <div class="flex space-x-3 text-gray-600">
+                <button onclick="toggleNewChatModal()" class="p-2 hover:bg-gray-100 rounded-full transition duration-150" title="Start New Chat or Group">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4m-7 0v2"></path></svg>
+                </button>
+                <button onclick="showPanel('log')" class="p-2 hover:bg-gray-100 rounded-full transition duration-150" title="System Log">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+                </button>
+                <button onclick="logoutUser()" class="p-2 text-red-500 hover:bg-gray-100 rounded-full transition duration-150" title="Logout">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3v-4a3 3 0 013-3h3m0 3V6a3 3 0 013-3h1m3 0a2 2 0 100 4 2 2 0 000-4z"></path></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Tabs/Navigation below header -->
+        <div class="p-2 border-b border-[--color-signal-border] bg-white">
+            <div class="flex space-x-1 p-1 rounded-lg bg-gray-100 text-sm">
+                <button id="tab-chats" onclick="showPanel('chats')" class="tab-btn flex-grow py-2 font-semibold rounded-lg bg-white shadow-md transition duration-150">Conversations</button>
+                <button id="tab-users" onclick="showPanel('users')" class="tab-btn flex-grow py-2 font-semibold rounded-lg text-gray-500 hover:bg-white transition duration-150">All Users</button>
+            </div>
+        </div>
+
+        <!-- Content Area: Conversation List, Users List, Log -->
+        <div class="flex-grow flex flex-col custom-scrollbar overflow-y-auto">
+            <div id="chats-panel" class="panel-content flex-grow flex flex-col">
+                <div id="conversation-list">
+                    <!-- Conversations loaded here -->
+                </div>
+            </div>
+
+            <div id="users-panel" class="panel-content flex-grow flex flex-col hidden">
+                <div class="p-3 border-b border-[--color-signal-border] bg-white">
+                    <button onclick="listUsers()" class="w-full text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold transition duration-150">Refresh User Statuses</button>
+                </div>
+                <div id="user-list">
+                    <!-- Users loaded here -->
+                </div>
+            </div>
+
+            <div id="log-panel" class="panel-content flex-grow custom-scrollbar overflow-y-auto hidden p-4 text-xs text-gray-700 bg-[--color-signal-primary]">
+                <h3 class="text-sm font-bold mb-2 border-b border-gray-200 pb-2">System Log</h3>
+                <div id="log" class="h-full"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Column 2: Chat Panel -->
+    <div id="chat-panel" class="flex-grow flex flex-col bg-[--color-signal-background] hidden">
+
+        <!-- Chat Header (Fixed at top) -->
+        <div id="chat-header" class="p-3 border-b border-[--color-signal-border] bg-white text-gray-700 flex justify-between items-center shadow-md">
+            <div class="flex items-center space-x-3">
+                <!-- Mobile back button -->
+                <button onclick="mobileSwitch('chats')" class="lg:hidden text-gray-500 hover:text-[--color-signal-green]" title="Back">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                </button>
+                <p class="text-xl font-bold text-[--color-signal-text]">
+                    <span id="current-conv-name">Select a Conversation</span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Messages Container (Scrollable Middle) -->
+        <div id="messages" class="flex-grow p-4 space-y-2 custom-scrollbar overflow-y-auto flex flex-col bg-gray-50" style="background-image: url('https://placehold.co/800x600/F0F0F0/888888?text=Signal+Style+Background'); background-size: cover; opacity: 0.9;">
+            <p id="welcome-message" class="text-center text-gray-500 text-base italic py-12">Click a conversation to start chatting!</p>
+        </div>
+
+        <!-- Message Input (Fixed at bottom) - Signal Style -->
+        <div id="chat-input-area" class="p-3 border-t border-[--color-signal-border] bg-white w-full hidden">
+            <div class="flex items-center space-x-3 bg-[--color-signal-primary] rounded-full px-4 py-2 shadow-inner border border-gray-200">
+                <input type="text" id="chat-input" placeholder="Message..." class="flex-grow p-1 text-sm bg-transparent border-none focus:ring-0 focus:outline-none placeholder-gray-500">
+                <button onclick="sendMessage()" class="bg-[--color-signal-green] hover:bg-[#054a43] text-white p-2 rounded-full transition duration-200 shadow-md transform hover:scale-105" title="Send Message">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transform rotate-45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                </button>
             </div>
         </div>
     </div>
 </div>
 
+<!-- 3. New Chat Modal (Signal Style) -->
+<div id="new-chat-modal" class="fixed inset-0 bg-black bg-opacity-40 hidden items-center justify-center p-4 z-50 transition-opacity duration-300" onclick="if(event.target.id === 'new-chat-modal') toggleNewChatModal()">
+    <div class="bg-white w-full max-w-lg p-6 rounded-xl shadow-2xl transform transition-transform duration-300 scale-95 opacity-0" id="modal-content">
+        <h3 class="text-2xl font-bold text-[--color-signal-text] mb-6 border-b border-gray-200 pb-3">Start New Conversation</h3>
+
+        <!-- Participants Selection List -->
+        <div class="mb-4">
+            <div class="flex items-center justify-between text-gray-500 text-sm mb-2">
+                <span>Select Contacts:</span>
+                <span id="modal-participants-count" class="font-bold text-[--color-signal-green]">0 Selected</span>
+            </div>
+            <div id="modal-user-list" class="h-64 overflow-y-auto custom-scrollbar p-2 border border-gray-200 rounded-lg">
+                <p class="text-gray-400 text-center py-4">Loading users...</p>
+            </div>
+        </div>
+
+        <!-- Group Name Input -->
+        <div id="group-name-section" class="hidden mb-4">
+            <label for="modal-group-name" class="block text-sm font-medium text-gray-700 mb-1">Group Name:</label>
+            <input type="text" id="modal-group-name" placeholder="E.g., Signal Dev Team" class="w-full p-3 text-sm bg-gray-50 border border-gray-300 rounded-lg text-gray-800 focus:ring-[--color-signal-green] focus:border-[--color-signal-green] shadow-inner">
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="mt-6 flex justify-end space-x-3">
+            <button onclick="toggleNewChatModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold rounded-lg transition duration-200">
+                Cancel
+            </button>
+            <button onclick="initiateConversation()" id="start-chat-button" class="px-4 py-2 bg-[--color-signal-green] hover:bg-[#054a43] text-white font-bold rounded-lg transition duration-200 disabled:opacity-50" disabled>
+                Start Chat
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
-    const API_BASE = "http://127.0.0.1:8080"; // ✅ Fixed backend base
-    let currentUser = null;
-    let token = null;
-    let selectedUser = null;
+    // Configuration
+    const API_BASE_URL = "http://localhost:8080/api";
+    const WS_BASE_URL = "ws://localhost:8080/ws";
 
-    document.getElementById("loginForm").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const username = document.getElementById("username").value.trim();
-        const password = document.getElementById("password").value.trim();
+    // Globals
+    let CURRENT_USER = null;
+    let JWT_TOKEN = "";
+    let ALL_USERS = [];
+    let SELECTED_PARTICIPANTS = new Set();
+    let CURRENT_CONVERSATION_ID = null;
+    let WEBSOCKET = null;
+    let ACTIVE_CONVERSATIONS = new Map();
+    let PENDING_MESSAGES = new Map();
 
-        try {
-            // try login first
-            let res = await fetch(`${API_BASE}/api/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password })
-            });
+    let APP_STATE = 'auth'; // 'auth' or 'main'
+    let CURRENT_MOBILE_VIEW = 'chats'; // 'chats', 'users', 'log'
 
-            if (!res.ok) {
-                // fallback: try register
-                res = await fetch(`${API_BASE}/api/register`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username, password })
-                });
-            }
+    // --- VIEW & UX HANDLERS ---
 
-            if (!res.ok) throw new Error("Auth failed");
-            const data = await res.json();
-            token = data.token || null;
-            currentUser = username;
+    // Directs log output to the correct visible panel
+    function log(message, type = 'info') {
+        const logDiv = APP_STATE === 'auth' ? $('#auth-log-status') : $('#log');
+        let color, bgColor;
+        if (type === 'error') { color = 'text-red-600'; bgColor = 'bg-red-100'; }
+        else if (type === 'success') { color = 'text-green-600'; bgColor = 'bg-green-100'; }
+        else { color = 'text-blue-600'; bgColor = 'bg-blue-100'; }
 
-            document.getElementById("auth").style.display = "none";
-            document.getElementById("main").style.display = "block";
+        logDiv.append(`<p class="mb-1 p-2 rounded ${bgColor} ${color} text-xs">**[${type.toUpperCase()}]** ${message}</p>`);
+        logDiv.scrollTop(logDiv[0].scrollHeight);
+    }
 
-            loadUsers();
-            setInterval(loadUsers, 5000);
-        } catch (err) {
-            alert("Error: " + err.message);
+    // Controls the visibility of the main application views
+    function renderView() {
+        if (CURRENT_USER) {
+            APP_STATE = 'main';
+            $('#auth-screen').hide();
+            $('#main-app').show();
+
+            // Update user info in the header
+            const initials = CURRENT_USER.username.charAt(0).toUpperCase();
+            $('#current-username-initial').text(initials);
+            $('#current-username-footer').text(CURRENT_USER.username);
+
+            // Trigger the mobile view handler to decide which panel to show
+            mobileSwitch(CURRENT_MOBILE_VIEW);
+        } else {
+            APP_STATE = 'auth';
+            $('#auth-screen').show();
+            $('#main-app').hide();
+            $('body').removeClass('mobile-chat-active');
         }
+    }
+
+    // Handles view switching for responsive/mobile mode
+    function mobileSwitch(view) {
+        CURRENT_MOBILE_VIEW = view;
+
+        // --- 1. Reset main content views ---
+        $('#sidebar-panel').show();
+        $('#chat-panel').hide();
+        $('body').removeClass('mobile-chat-active');
+
+        // --- 2. Determine which view to display ---
+        if (view === 'chats' || view === 'users' || view === 'log') {
+            showPanel(view);
+            // Hide chat panel on mobile when on sidebar view
+            if ($(window).width() < 1024) {
+                $('#chat-panel').hide();
+            }
+        } else if (view === 'chat') {
+            // Show the chat panel and set body class for mobile layout fix
+            $('#chat-panel').show();
+            $('body').addClass('mobile-chat-active');
+        }
+
+        // Ensure that on desktop, both sidebar and chat panel are shown
+        if ($(window).width() >= 1024) {
+            $('#chat-panel').show();
+            showPanel(CURRENT_MOBILE_VIEW); // Keep the sidebar content tab correct
+        }
+    }
+
+    // Handles switching between inner tabs (Chats/Users/Log)
+    function showPanel(panelId) {
+        $('.panel-content').hide();
+        $('.tab-btn').removeClass('bg-white shadow-md text-gray-700').addClass('text-gray-500 hover:bg-white');
+
+        $(`#${panelId}-panel`).show();
+
+        // Apply active state only if not 'log'
+        if (panelId !== 'log') {
+            $(`#tab-${panelId}`).removeClass('text-gray-500 hover:bg-white').addClass('bg-white shadow-md text-gray-700');
+        } else {
+            // Log tab is separate from the main tab group visually
+            $(`#tab-chats`).removeClass('bg-white shadow-md text-gray-700').addClass('text-gray-500 hover:bg-white');
+            $(`#tab-users`).removeClass('bg-white shadow-md text-gray-700').addClass('text-gray-500 hover:bg-white');
+        }
+    }
+
+    // --- MODAL & GROUP/CHAT CREATION HANDLERS ---
+
+    function toggleNewChatModal() {
+        const modal = $('#new-chat-modal');
+        const modalContent = $('#modal-content');
+
+        if (modal.hasClass('hidden')) {
+            // Show modal
+            modal.removeClass('hidden').css('opacity', '1').css('display', 'flex');
+            modalContent.removeClass('scale-95 opacity-0');
+
+            // Reset state
+            SELECTED_PARTICIPANTS.clear();
+            $('#modal-group-name').val('');
+            renderModalUserList();
+            updateModalState();
+
+        } else {
+            // Animate out
+            modalContent.addClass('scale-95 opacity-0');
+            modal.css('opacity', '0');
+
+            // Hide modal after animation
+            setTimeout(() => {
+                modal.addClass('hidden').css('display', 'none');
+            }, 300);
+
+            // Re-render sidebar lists to unselect users
+            listUsers(false);
+            listConversations(false);
+        }
+    }
+
+    function renderModalUserList() {
+        const list = $('#modal-user-list').empty();
+
+        ALL_USERS.forEach(user => {
+            if (CURRENT_USER && user.id === CURRENT_USER.id) return;
+
+            const isSelected = SELECTED_PARTICIPANTS.has(user.id);
+            const statusColor = user.status === 'online' ? 'bg-green-500' : 'bg-gray-400';
+            const selectClass = isSelected ? 'bg-green-50' : 'hover:bg-gray-100';
+
+            list.append(`
+                <div class="p-3 rounded cursor-pointer flex items-center justify-between transition duration-150 ${selectClass} border-b border-gray-100"
+                     data-user-id="${user.id}" onclick="toggleModalParticipant(${user.id}, this)">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 bg-gray-400 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-sm mr-3">
+                            ${user.username.charAt(0).toUpperCase()}
+                            <span class="absolute right-0 bottom-0 w-3 h-3 rounded-full ${statusColor} border-2 border-white"></span>
+                        </div>
+                        <span class="font-medium text-gray-800">${user.username}</span>
+                    </div>
+                    <span class="text-xs font-semibold ${isSelected ? 'text-[--color-signal-green]' : 'text-gray-400'}">
+                        ${isSelected ? 'SELECTED' : 'ADD'}
+                    </span>
+                </div>
+            `);
+        });
+    }
+
+    function toggleModalParticipant(id, element) {
+        if (SELECTED_PARTICIPANTS.has(id)) {
+            SELECTED_PARTICIPANTS.delete(id);
+            $(element).removeClass('bg-green-50').addClass('hover:bg-gray-100');
+            $(element).find('span.text-xs').text('ADD').removeClass('text-[--color-signal-green]').addClass('text-gray-400');
+        } else {
+            SELECTED_PARTICIPANTS.add(id);
+            $(element).addClass('bg-green-50').removeClass('hover:bg-gray-100');
+            $(element).find('span.text-xs').text('SELECTED').removeClass('text-gray-400').addClass('text-[--color-signal-green]');
+        }
+        updateModalState();
+    }
+
+    function updateModalState() {
+        const count = SELECTED_PARTICIPANTS.size;
+        $('#modal-participants-count').text(`${count} Selected`);
+
+        // Enable/Disable Start Chat button based on selection
+        const startButton = $('#start-chat-button');
+        if (count > 0) {
+            startButton.prop('disabled', false).removeClass('disabled:opacity-50');
+        } else {
+            startButton.prop('disabled', true).addClass('disabled:opacity-50');
+        }
+
+        // Show group name input if more than one user is selected (i.e., a group chat is possible)
+        if (count > 1) {
+            $('#group-name-section').slideDown(200);
+        } else {
+            $('#group-name-section').slideUp(200);
+        }
+
+        // Update button text
+        if (count === 1) {
+            startButton.text('Start 1-on-1 Chat');
+        } else if (count > 1) {
+            startButton.text('Start Group Chat');
+        } else {
+            startButton.text('Select a Contact');
+        }
+    }
+
+    function initiateConversation() {
+        const participantIDs = Array.from(SELECTED_PARTICIPANTS);
+
+        if (participantIDs.length === 0) {
+            log("Please select at least one participant.", 'error');
+            return;
+        }
+
+        const isGroup = participantIDs.length > 1;
+        const name = $('#modal-group-name').val().trim();
+
+        if (isGroup && !name) {
+            log("Group chats require a name.", 'error');
+            alertModal("Group Name Required", "Please enter a name for your group chat.");
+            return;
+        }
+
+        // Add current user to participants list
+        participantIDs.push(CURRENT_USER.id);
+
+        createConversation(name, isGroup, participantIDs);
+    }
+
+    // Simple custom alert (since window.alert is prohibited)
+    function alertModal(title, message) {
+        log(`[UI Alert] ${title}: ${message}`, 'error');
+        // Using confirm() fallback for simplicity and mandatory feedback to user
+        if(confirm(`${title}: ${message}`)) {}
+    }
+
+    function createConversation(name, isGroup, participantIDs) {
+        if (!JWT_TOKEN || !CURRENT_USER) { log("Please login first.", 'error'); return; }
+
+        $.ajax({
+            url: `${API_BASE_URL}/conversations`,
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${JWT_TOKEN}` },
+            contentType: 'application/json',
+            data: JSON.stringify({
+                participant_ids: participantIDs,
+                name: isGroup ? (name || null) : null,
+                is_group: isGroup
+            }),
+            success: function(response) {
+                const conv = response.conversation;
+                log(`Conversation created/retrieved!`, 'success');
+
+                let convName = conv.name;
+                if (!conv.is_group) {
+                    const otherID = conv.participant_ids.find(id => id !== CURRENT_USER.id);
+                    convName = getUserName(otherID);
+                } else if (!convName) {
+                    convName = `Group Chat (${conv.participant_ids.length} members)`;
+                }
+
+                ACTIVE_CONVERSATIONS.set(conv.id, conv);
+
+                toggleNewChatModal(); // Close the modal
+                switchConversation(conv.id, convName);
+                listConversations(); // Refresh the sidebar list
+                SELECTED_PARTICIPANTS.clear();
+            },
+            error: function(xhr) {
+                log(`Create conversation failed: ${xhr.responseJSON ? xhr.responseJSON.error : 'Server error'}`, 'error');
+            }
+        });
+    }
+
+    // --- AUTHENTICATION HANDLERS ---
+
+    function registerUser() {
+        const username = $('#reg-username').val();
+        const password = $('#reg-password').val();
+        if (!username || !password) {
+            log("Username and Password are required for registration.", 'error');
+            return;
+        }
+        $.ajax({
+            url: `${API_BASE_URL}/register`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ username: username, password: password }),
+            success: function(response) {
+                log(`Registration successful for ${username}. Please login.`, 'success');
+                $('#login-username').val(username);
+                $('#login-password').val(password);
+            },
+            error: function(xhr) {
+                log(`Registration failed: ${xhr.responseJSON ? xhr.responseJSON.error : 'Server error'}`, 'error');
+            }
+        });
+    }
+
+    function loginUser() {
+        const username = $('#login-username').val();
+        const password = $('#login-password').val();
+        if (!username || !password) {
+            log("Please enter your username and password.", 'error');
+            return;
+        }
+        $.ajax({
+            url: `${API_BASE_URL}/login`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ username: username, password: password }),
+            success: function(response) {
+                CURRENT_USER = response.user;
+                JWT_TOKEN = response.token;
+                log(`Login successful. Welcome ${CURRENT_USER.username}!`, 'success');
+                renderView();
+                connectWebSocket();
+                listUsers();
+                listConversations();
+            },
+            error: function(xhr) {
+                log(`Login failed: ${xhr.responseJSON ? xhr.responseJSON.error : 'Server error'}`, 'error');
+            }
+        });
+    }
+
+    function logoutUser() {
+        if (!CURRENT_USER) return;
+
+        $.ajax({
+            url: `${API_BASE_URL}/logout`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ user_id: CURRENT_USER.id }),
+            success: function() {
+                log(`Logout signal sent.`, 'info');
+            },
+            error: function(xhr) {
+                log(`Logout API failed: ${xhr.responseJSON ? xhr.responseJSON.error : 'Server error'}`, 'error');
+            },
+            complete: function() {
+                if (WEBSOCKET && WEBSOCKET.readyState === WebSocket.OPEN) {
+                    WEBSOCKET.close();
+                }
+                CURRENT_USER = null;
+                JWT_TOKEN = "";
+                CURRENT_CONVERSATION_ID = null;
+                renderView(); // Go back to auth screen
+                listUsers();
+            }
+        });
+    }
+
+
+    // --- USER/CONVERSATION HANDLERS ---
+
+    function getUserName(id) {
+        return ALL_USERS.find(u => u.id === id)?.username || `Unknown User`;
+    }
+
+    function listUsers(logMessage = true) {
+        if (logMessage && CURRENT_USER) { log("Fetching users...", 'info'); }
+
+        $.ajax({
+            url: `${API_BASE_URL}/users`,
+            method: 'GET',
+            headers: { 'Authorization': JWT_TOKEN ? `Bearer ${JWT_TOKEN}` : '' },
+            success: function(response) {
+                const users = response.users || [];
+                ALL_USERS = users;
+                const list = $('#user-list').empty();
+
+                users.forEach(user => {
+                    if (CURRENT_USER && user.id === CURRENT_USER.id) return;
+
+                    const statusClass = user.status === 'online' ? 'bg-green-500' : 'bg-gray-400';
+                    const statusText = user.status === 'online' ? 'Online' : 'Offline';
+
+                    list.append(`
+                        <div class="p-3 cursor-pointer flex items-center transition duration-150 hover:bg-gray-100 border-b border-gray-200"
+                             onclick="switchConversationWithUser(${user.id}, '${user.username}')">
+                            <div class="relative w-10 h-10 mr-3">
+                                <div class="w-full h-full bg-gray-400 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-sm">
+                                    ${user.username.charAt(0).toUpperCase()}
+                                </div>
+                                <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full ${statusClass} border-2 border-white"></span>
+                            </div>
+                            <div>
+                                <span class="font-medium text-gray-800">${user.username}</span>
+                                <span class="text-xs text-gray-500 block">${statusText}</span>
+                            </div>
+                        </div>
+                    `);
+                });
+            },
+            error: function(xhr) {
+                log(`List users failed: ${xhr.status}`, 'error');
+            }
+        });
+    }
+
+    function switchConversationWithUser(userID, username) {
+        // Prepare to create a 1-on-1 conversation
+        SELECTED_PARTICIPANTS.clear();
+        SELECTED_PARTICIPANTS.add(userID);
+
+        // Find existing 1-on-1 chat (API typically handles this best, but we check here too)
+        let existingConv = null;
+        for (const [id, conv] of ACTIVE_CONVERSATIONS) {
+            if (!conv.is_group && conv.participant_ids.length === 2 && conv.participant_ids.includes(userID) && conv.participant_ids.includes(CURRENT_USER.id)) {
+                existingConv = conv;
+                break;
+            }
+        }
+
+        if (existingConv) {
+            switchConversation(existingConv.id, username);
+        } else {
+            // Initiate creation (API handles finding existing or creating new)
+            createConversation(null, false, [userID, CURRENT_USER.id]);
+        }
+    }
+
+
+    function listConversations(logMessage = true) {
+        if (!JWT_TOKEN || !CURRENT_USER) { return; }
+        if (logMessage) { log("Fetching conversations...", 'info'); }
+
+        $.ajax({
+            url: `${API_BASE_URL}/conversations?user_id=${CURRENT_USER.id}`,
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${JWT_TOKEN}` },
+            success: function(response) {
+                const conversations = response.conversations || [];
+                const list = $('#conversation-list').empty();
+                ACTIVE_CONVERSATIONS.clear();
+
+                conversations.forEach(conv => {
+                    let convName = conv.name;
+                    ACTIVE_CONVERSATIONS.set(conv.id, conv);
+
+                    if (!conv.is_group) {
+                        const otherParticipants = conv.participant_ids.filter(id => id !== CURRENT_USER.id);
+                        convName = otherParticipants.length === 1 ? getUserName(otherParticipants[0]) : "Direct Message";
+                    } else if (!convName) {
+                        convName = `Group Chat (${conv.participant_ids.length} members)`;
+                    }
+
+                    const lastMessage = conv.last_message_content ? (conv.last_message_content.length > 30 ? conv.last_message_content.substring(0, 30) + '...' : conv.last_message_content) : "No messages yet...";
+
+                    const isActive = conv.id === CURRENT_CONVERSATION_ID;
+                    const bgColor = isActive ? 'bg-gray-200' : 'hover:bg-gray-100';
+                    const avatarColor = conv.is_group ? 'bg-indigo-400' : 'bg-gray-400';
+                    const avatarText = conv.is_group ? 'G' : convName.charAt(0).toUpperCase();
+
+                    list.append(`
+                        <div class="p-3 cursor-pointer flex items-center space-x-3 transition duration-150 ${bgColor} border-b border-gray-200"
+                             onclick="switchConversation(${conv.id}, '${convName.replace(/'/g, "\\'")}')">
+
+                            <div class="w-12 h-12 ${avatarColor} rounded-full flex items-center justify-center text-lg font-bold text-white flex-shrink-0">
+                                ${avatarText}
+                            </div>
+
+                            <div class="flex-grow min-w-0">
+                                <p class="font-semibold text-base truncate">${convName}</p>
+                                <p class="text-sm text-gray-500 truncate">${lastMessage}</p>
+                            </div>
+                        </div>
+                    `);
+                });
+            },
+            error: function(xhr) {
+                log(`List conversations failed: ${xhr.status}`, 'error');
+            }
+        });
+    }
+
+    // --- CHAT HANDLERS ---
+
+    function switchConversation(convID, convName) {
+        CURRENT_CONVERSATION_ID = convID;
+        // Update header
+        $('#current-conv-name').text(convName);
+
+        // Update sidebar visual (listConversations handles this by re-rendering)
+        listConversations(false);
+
+        // Update chat window
+        $('#messages').empty().append('<p id="welcome-message" class="text-center text-gray-500 text-base italic py-12">Loading messages...</p>');
+        $('#chat-input-area').show();
+
+        // Mobile view: switch from list to chat panel
+        if ($(window).width() < 1024) {
+            mobileSwitch('chat');
+        }
+
+        loadMessages(convID);
+    }
+
+    function loadMessages(convID) {
+        $.ajax({
+            url: `${API_BASE_URL}/messages?conversation_id=${convID}`,
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${JWT_TOKEN}` },
+            success: function(response) {
+                $('#messages').empty(); // Clear "Loading messages..."
+                const messages = response.messages || [];
+                messages.forEach(msg => displayMessage(msg));
+                log(`Loaded ${messages.length} previous messages for ${convID}.`, 'info');
+            },
+            error: function(xhr) {
+                $('#messages').empty().append('<p class="text-center text-red-500 text-base italic py-12">Failed to load messages. Re-login might be needed.</p>');
+                log(`Load messages failed: ${xhr.responseJSON ? xhr.responseJSON.error : 'Server error'}`, 'error');
+            }
+        });
+    }
+
+    function sendMessage() {
+        if (!WEBSOCKET || WEBSOCKET.readyState !== WebSocket.OPEN) {
+            log("WebSocket is not connected. Trying to reconnect...", 'error');
+            connectWebSocket();
+            return;
+        }
+        if (!CURRENT_CONVERSATION_ID) {
+            log("Please select a conversation first.", 'error');
+            return;
+        }
+
+        const content = $('#chat-input').val();
+        if (!content.trim()) return;
+
+        const tempID = 'temp-' + Date.now();
+        const message = {
+            conversation_id: CURRENT_CONVERSATION_ID,
+            sender_id: CURRENT_USER.id,
+            content: content,
+            message_type: 'text',
+        };
+
+        const tempMsg = {...message, id: tempID, created_at: new Date().toISOString()};
+        const element = displayMessage(tempMsg);
+        PENDING_MESSAGES.set(tempID, element);
+
+        WEBSOCKET.send(JSON.stringify(message));
+        $('#chat-input').val('');
+    }
+
+    function displayMessage(msg) {
+        const isSent = msg.sender_id === CURRENT_USER.id;
+        const conv = ACTIVE_CONVERSATIONS.get(msg.conversation_id);
+        const isGroup = conv ? conv.is_group : false;
+        const username = getUserName(msg.sender_id);
+
+        const date = new Date(msg.created_at);
+        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const bubbleClass = isSent ? 'sent' : 'received';
+        const timestampColor = isSent ? 'text-gray-600' : 'text-gray-500';
+
+        // Only show sender name if it's a received message in a group chat
+        const senderNameHTML = (!isSent && isGroup) ?
+            `<span class="text-xs font-bold text-gray-500 block mb-1">${username}</span>` : '';
+
+        const $messageHtml = $(`
+            <div class="message-bubble ${bubbleClass} flex flex-col">
+                ${senderNameHTML}
+                <span class="text-sm break-words">${msg.content}</span>
+                <span class="text-[10px] opacity-75 mt-1 ${timestampColor} self-end">${timeStr}</span>
+            </div>
+        `);
+
+        const msgDiv = $('#messages');
+        msgDiv.append($messageHtml);
+        msgDiv.scrollTop(msgDiv[0].scrollHeight);
+
+        return $messageHtml;
+    }
+
+    // --- WEBSOCKET HANDLER ---
+
+    function connectWebSocket() {
+        if (WEBSOCKET && WEBSOCKET.readyState === WebSocket.OPEN) {
+            WEBSOCKET.close();
+        }
+
+        WEBSOCKET = new WebSocket(`${WS_BASE_URL}?user_id=${CURRENT_USER.id}`);
+
+        WEBSOCKET.onopen = function() {
+            log("WebSocket connection established.", 'success');
+        };
+
+        WEBSOCKET.onmessage = function(event) {
+            try {
+                const msg = JSON.parse(event.data);
+
+                if (msg.type === "status_update") {
+                    log(`Status change for User ID ${msg.user_id}: ${msg.new_status}`, 'info');
+                    const user = ALL_USERS.find(u => u.id === msg.user_id);
+                    if (user) { user.status = msg.new_status; }
+                    listUsers(false); // Refresh user list UI
+                    return;
+                }
+
+                // Handle Message Confirmation (Optimistic Update)
+                if (msg.sender_id === CURRENT_USER.id) {
+                    // Try to find and remove temporary message element
+                    let foundTemp = false;
+                    PENDING_MESSAGES.forEach((element, tempID) => {
+                        if (element.find('span.text-sm').text() === msg.content) {
+                            element.remove();
+                            PENDING_MESSAGES.delete(tempID);
+                            foundTemp = true;
+                        }
+                    });
+
+                    // Re-display the confirmed message if it belongs to the current chat
+                    if (foundTemp && msg.conversation_id === CURRENT_CONVERSATION_ID) {
+                        displayMessage(msg);
+                        return;
+                    }
+                }
+
+                // Display received message
+                if (msg.conversation_id === CURRENT_CONVERSATION_ID) {
+                    displayMessage(msg);
+                } else {
+                    // New message arrived for an inactive conversation, refresh list
+                    log(`New message for Conversation ID ${msg.conversation_id}.`, 'info');
+                    listConversations(false);
+                }
+
+            } catch (e) {
+                log(`Error parsing message: ${e.message}`, 'error');
+            }
+        };
+
+        WEBSOCKET.onclose = function(event) {
+            log(`WebSocket connection closed. Code: ${event.code}. Attempting to reconnect in 5s...`, 'error');
+            WEBSOCKET = null;
+            // Simple auto-reconnect logic for robustness (only if user is logged in)
+            if (CURRENT_USER) {
+                setTimeout(connectWebSocket, 5000);
+            }
+        };
+
+        WEBSOCKET.onerror = function(error) {
+            log(`WebSocket error: ${error.message}`, 'error');
+        };
+    }
+
+    // --- INITIALIZATION ---
+    $(document).ready(function() {
+        // Add Enter key listener for chat input
+        $('#chat-input').keypress(function(e) {
+            if(e.which == 13) {
+                e.preventDefault(); // Prevent form submission
+                sendMessage();
+            }
+        });
+
+        // Handle window resize for responsiveness
+        function handleResize() {
+            const isDesktop = $(window).width() >= 1024;
+
+            if (CURRENT_USER) {
+                if (isDesktop) {
+                    // Desktop: Show the full grid layout
+                    $('#main-app').show().css('grid-template-columns', '350px 1fr');
+                    $('#sidebar-panel').show();
+                    $('#chat-panel').show();
+                    $('body').removeClass('mobile-chat-active');
+                    showPanel(CURRENT_MOBILE_VIEW);
+                } else {
+                    // Mobile: use mobileSwitch to control single view
+                    $('#main-app').show().css('grid-template-columns', '1fr');
+                    mobileSwitch(CURRENT_MOBILE_VIEW);
+                }
+            } else {
+                renderView();
+            }
+        }
+
+        $(window).resize(handleResize);
+        renderView(); // Initial rendering
+
     });
 
-    async function loadUsers() {
-        try {
-            const res = await fetch(`${API_BASE}/api/users`, {
-                headers: token ? { "Authorization": `Bearer ${token}` } : {}
-            });
-            if (!res.ok) return;
-            const users = await res.json();
-            const list = document.getElementById("users");
-            list.innerHTML = "";
-            users.forEach(u => {
-                if (u.username === currentUser) return;
-                const div = document.createElement("div");
-                div.className = "user" + (u.online ? " online" : "");
-                div.innerHTML = `
-        <span>${u.username}</span>
-        <span class="status"></span>
-      `;
-                div.onclick = () => openChat(u.username);
-                list.appendChild(div);
-            });
-        } catch (err) {
-            console.error("Failed to load users", err);
-        }
-    }
-
-    function openChat(username) {
-        selectedUser = username;
-        document.getElementById("messages").innerHTML = `<p style="text-align:center;">Chat with ${username}</p>`;
-    }
-
-    document.getElementById("sendBtn").addEventListener("click", sendMessage);
-
-    async function sendMessage() {
-        const input = document.getElementById("messageBox");
-        const msg = input.value.trim();
-        if (!msg || !selectedUser) return;
-
-        try {
-            const res = await fetch(`${API_BASE}/api/send`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-                body: JSON.stringify({ to: selectedUser, message: msg })
-            });
-            if (res.ok) {
-                appendMessage(msg, true);
-                input.value = "";
-            }
-        } catch (err) {
-            console.error("Send failed", err);
-        }
-    }
-
-    function appendMessage(text, self=false) {
-        const div = document.createElement("div");
-        div.className = "msg" + (self ? " self" : "");
-        div.textContent = text;
-        document.getElementById("messages").appendChild(div);
-    }
 </script>
 </body>
 </html>
-```

@@ -283,15 +283,15 @@ func main() {
 	// router
 	r := mux.NewRouter()
 	r.Use(corsMiddleware)
-	r.HandleFunc("/health", healthHandler).Methods("GET")
+	r.HandleFunc("/health", healthHandler).Methods("GET", "OPTIONS")
 	api := r.PathPrefix("/api").Subrouter()
-	api.HandleFunc("/register", registerHandler).Methods("POST")
-	api.HandleFunc("/login", loginHandler).Methods("POST")
-	api.HandleFunc("/users", listUsersHandler).Methods("GET")
-	api.HandleFunc("/conversations", createConversationHandler).Methods("POST")
-	api.HandleFunc("/conversations", listConversationsHandler).Methods("GET")
-	api.HandleFunc("/messages", sendMessageHandler).Methods("POST")
-	api.HandleFunc("/messages", listMessagesHandler).Methods("GET")
+	api.HandleFunc("/register", registerHandler).Methods("POST", "OPTIONS")
+	api.HandleFunc("/login", loginHandler).Methods("POST", "OPTIONS")
+	api.HandleFunc("/users", listUsersHandler).Methods("GET", "OPTIONS")
+	api.HandleFunc("/conversations", createConversationHandler).Methods("POST", "OPTIONS")
+	api.HandleFunc("/conversations", listConversationsHandler).Methods("GET", "OPTIONS")
+	api.HandleFunc("/messages", sendMessageHandler).Methods("POST", "OPTIONS")
+	api.HandleFunc("/messages", listMessagesHandler).Methods("GET", "OPTIONS")
 
 	r.HandleFunc("/ws", wsHandler)
 
@@ -609,3 +609,599 @@ func getEnv(k, fallback string) string {
 	}
 	return fallback
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go Chat App - Final Ideal Chat Tester</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; display: flex; gap: 20px; padding: 20px; background-color: #f4f4f4; }
+        .panel { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); flex: 1; min-width: 300px; }
+        h2 { border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 0; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+        button:hover { background-color: #0056b3; }
+
+        /* --- Chat Window Styling --- */
+        #log, #messages { height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-top: 10px; background-color: #e5ddd5; }
+        #messages {
+            display: flex;
+            flex-direction: column;
+        }
+        .message-bubble {
+            max-width: 75%;
+            margin: 5px 0;
+            padding: 8px 10px;
+            border-radius: 8px;
+            line-height: 1.4;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
+        }
+        .message-bubble.sent {
+            background-color: #dcf8c6;
+            align-self: flex-end;
+            margin-left: auto;
+            align-items: flex-end;
+        }
+        .message-bubble.received {
+            background-color: #ffffff;
+            align-self: flex-start;
+            margin-right: auto;
+            align-items: flex-start;
+        }
+        .msg-sender {
+            font-size: 12px;
+            font-weight: bold;
+            color: #34b7f1;
+            margin-bottom: 2px;
+        }
+        .msg-text {
+            font-size: 14px;
+        }
+        .msg-info {
+            font-size: 10px;
+            color: #8c8c8c;
+            margin-top: 3px;
+            padding-left: 5px;
+        }
+
+        .user-item, .conversation-item { padding: 8px; border-bottom: 1px solid #eee; cursor: pointer; }
+        .user-item:hover, .conversation-item:hover { background-color: #e9e9e9; }
+        .chat-container { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="panel" id="auth-panel">
+    <h2>Authentication</h2>
+    <div id="auth-forms">
+        <input type="text" id="reg-username" placeholder="Register Username">
+        <input type="password" id="reg-password" placeholder="Register Password">
+        <button onclick="registerUser()">Register</button>
+        <hr style="margin: 15px 0;">
+        <input type="text" id="login-username" placeholder="Login Username">
+        <input type="password" id="login-password" placeholder="Login Password">
+        <button onclick="loginUser()">Login</button>
+    </div>
+    <div id="logged-in-status" style="display:none; margin-top: 15px;">
+        <p style="color: green; font-weight: bold;">
+            Logged in as: <span id="current-username"></span> (ID: <span id="current-user-id"></span>)
+        </p>
+        <button onclick="logoutUser()" style="background-color: #dc3545;">Logout</button>
+    </div>
+</div>
+
+<div class="panel" id="users-panel" style="display:none;">
+    <h2>Users</h2>
+    <button onclick="listUsers()">Refresh Users & Status</button>
+    <div id="user-list" style="margin-top: 10px;"></div>
+</div>
+
+<div class="panel" id="conv-panel" style="display:none;">
+    <h2>Conversations</h2>
+    <button onclick="listConversations()">List Conversations</button>
+    <div id="conversation-list" style="margin-top: 10px;"></div>
+
+    <h3 style="margin-top: 20px;">Create New Conversation</h3>
+    <p>Select participants from the 'Users' panel and click to start.</p>
+    <div id="create-conv-participants" style="margin-bottom: 10px; font-weight: bold;">Participants: (Your ID included automatically)</div>
+    <input type="text" id="group-name" placeholder="Group Name (Optional)">
+    <button onclick="startOneToOneChat()">Start 1-on-1 Chat</button>
+    <button onclick="startGroupChat()">Start Group Chat</button>
+</div>
+
+<div class="panel chat-container" id="chat-panel">
+    <h2>Chat Window: <span id="current-conv-name"></span> (ID: <span id="current-conv-id"></span>)</h2>
+    <div id="messages"></div>
+    <input type="text" id="chat-input" placeholder="Type your message...">
+    <button onclick="sendMessage()">Send</button>
+</div>
+
+<div class="panel">
+    <h2>Log / Status</h2>
+    <div id="log"></div>
+</div>
+
+<script>
+    // Configuration
+    const API_BASE_URL = "http://localhost:8080/api";
+    const WS_BASE_URL = "ws://localhost:8080/ws";
+
+    // Globals
+    let CURRENT_USER = null;
+    let JWT_TOKEN = "";
+    let ALL_USERS = [];
+    let SELECTED_PARTICIPANTS = new Set();
+    let CURRENT_CONVERSATION_ID = null;
+    let WEBSOCKET = null;
+    let ACTIVE_CONVERSATIONS = new Map();
+    let PENDING_MESSAGES = new Map();
+
+    // --- Utility Functions ---
+
+    function log(message, type = 'info') {
+        const logDiv = $('#log');
+        logDiv.append(`<p style="color: ${type === 'error' ? 'red' : type === 'success' ? 'green' : 'blue'}; margin: 2px 0;">[${type.toUpperCase()}] ${message}</p>`);
+        logDiv.scrollTop(logDiv[0].scrollHeight);
+    }
+
+    function getUserName(id) {
+        return ALL_USERS.find(u => u.id === id)?.username || `User ${id}`;
+    }
+
+    // --- 1. Auth Handlers ---
+    function registerUser() {
+        const username = $('#reg-username').val();
+        const password = $('#reg-password').val();
+        $.ajax({
+            url: `${API_BASE_URL}/register`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ username: username, password: password }),
+            success: function(response) {
+                log(`Registration successful for ${username}. Please log in.`, 'success');
+            },
+            error: function(xhr) {
+                log(`Registration failed: ${xhr.responseJSON ? xhr.responseJSON.error : 'Server error'}`, 'error');
+            }
+        });
+    }
+
+    function loginUser() {
+        const username = $('#login-username').val();
+        const password = $('#login-password').val();
+        $.ajax({
+            url: `${API_BASE_URL}/login`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ username: username, password: password }),
+            success: function(response) {
+                CURRENT_USER = response.user;
+                JWT_TOKEN = response.token;
+                log(`Login successful. Welcome ${CURRENT_USER.username}!`, 'success');
+                $('#logged-in-status').show();
+                $('#current-username').text(CURRENT_USER.username);
+                $('#current-user-id').text(CURRENT_USER.id);
+                $('#auth-forms').hide();
+                $('#users-panel, #conv-panel').show();
+
+                connectWebSocket();
+                listUsers();
+                listConversations();
+            },
+            error: function(xhr) {
+                log(`Login failed: ${xhr.responseJSON ? xhr.responseJSON.error : 'Server error'}`, 'error');
+            }
+        });
+    }
+
+    function logoutUser() {
+        if (!CURRENT_USER) return;
+
+        // 1. Call the logout API to set status to 'offline' and trigger WS broadcast
+        $.ajax({
+            url: `${API_BASE_URL}/logout`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ user_id: CURRENT_USER.id }),
+            success: function(response) {
+                log(`Logout successful. Status is now offline.`, 'success');
+            },
+            error: function(xhr) {
+                log(`Logout failed: ${xhr.responseJSON ? xhr.responseJSON.error : 'Server error'}`, 'error');
+            },
+            complete: function() {
+                // 2. Clear frontend state and reset UI regardless of API success
+                if (WEBSOCKET && WEBSOCKET.readyState === WebSocket.OPEN) {
+                    WEBSOCKET.close(); // Server also tries to close it, but client-side close is good practice.
+                }
+                CURRENT_USER = null;
+                JWT_TOKEN = "";
+                // Clear UI
+                $('#logged-in-status').hide();
+                $('#auth-forms').show();
+                $('#users-panel, #conv-panel, #chat-panel').hide();
+                $('#messages').empty();
+                // We call listUsers here to force our own status to update on the list
+                listUsers();
+            }
+        });
+    }
+
+
+    // --- 2. User/Conversation Handlers ---
+
+    function listUsers(logMessage = true) {
+        if (logMessage) { log("Fetching users...", 'info'); }
+
+        $.ajax({
+            url: `${API_BASE_URL}/users`,
+            method: 'GET',
+            headers: { 'Authorization': JWT_TOKEN ? `Bearer ${JWT_TOKEN}` : '' },
+            success: function(response) {
+                const users = response.users || [];
+                ALL_USERS = users;
+                const list = $('#user-list').empty();
+                users.forEach(user => {
+                    // Skip logged-in user in the selectable list, but keep them in ALL_USERS for name lookups
+                    if (CURRENT_USER && user.id === CURRENT_USER.id) return;
+
+                    const isSelected = SELECTED_PARTICIPANTS.has(user.id);
+                    list.append(`
+                        <div class="user-item" data-user-id="${user.id}" onclick="toggleParticipant(${user.id}, this)"
+                            style="background-color: ${isSelected ? '#d1e7dd' : 'white'};">
+                            ID: ${user.id}, Username: ${user.username}
+                            (<span style="color: ${user.status === 'online' ? 'green' : 'red'};">${user.status}</span>)
+                        </div>
+                    `);
+                });
+                updateParticipantList();
+            },
+            error: function(xhr) {
+                log(`List users failed: ${xhr.status} (May be expected if not logged in)`, 'error');
+            }
+        });
+    }
+
+    function toggleParticipant(id, element) {
+        if (SELECTED_PARTICIPANTS.has(id)) {
+            SELECTED_PARTICIPANTS.delete(id);
+            $(element).css('background-color', 'white');
+        } else {
+            SELECTED_PARTICIPANTS.add(id);
+            $(element).css('background-color', '#d1e7dd');
+        }
+        updateParticipantList();
+    }
+
+    function updateParticipantList() {
+        let usernames = [];
+        SELECTED_PARTICIPANTS.forEach(id => {
+            usernames.push(getUserName(id));
+        });
+        $('#create-conv-participants').text(`Participants: ${usernames.join(', ')} (Your ID included automatically)`);
+    }
+
+    function createConversation(name, isGroup) {
+        if (!JWT_TOKEN || !CURRENT_USER) { log("Please login first.", 'error'); return; }
+        const participantIDs = Array.from(SELECTED_PARTICIPANTS);
+        participantIDs.push(CURRENT_USER.id);
+
+        if (!isGroup && participantIDs.length !== 2) {
+            log("A 1-on-1 chat requires exactly one other participant to be selected.", 'error');
+            return;
+        }
+        if (isGroup && participantIDs.length < 3) {
+            log("A group chat requires at least two participants (3 total).", 'error');
+            return;
+        }
+
+        $.ajax({
+            url: `${API_BASE_URL}/conversations`,
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${JWT_TOKEN}` },
+            contentType: 'application/json',
+            data: JSON.stringify({
+                participant_ids: participantIDs,
+                name: isGroup ? (name || 'New Group') : null,
+                is_group: isGroup
+            }),
+            success: function(response) {
+                const conv = response.conversation;
+                log(`Conversation created/retrieved! ID: ${conv.id}`, 'success');
+
+                let convName = conv.name;
+                if (!conv.is_group) {
+                    const otherID = conv.participant_ids.find(id => id !== CURRENT_USER.id);
+                    convName = getUserName(otherID);
+                } else if (!convName) {
+                    convName = "Group Chat";
+                }
+
+                ACTIVE_CONVERSATIONS.set(conv.id, conv);
+
+                switchConversation(conv.id, convName);
+                listConversations(); // CRUCIAL: Refreshes the conversation list
+                SELECTED_PARTICIPANTS.clear();
+                listUsers();
+            },
+            error: function(xhr) {
+                log(`Create conversation failed: ${xhr.responseJSON ? xhr.responseJSON.error : 'Server error'}`, 'error');
+            }
+        });
+    }
+
+    function startOneToOneChat() {
+        createConversation(null, false);
+    }
+
+    function startGroupChat() {
+        const name = $('#group-name').val();
+        createConversation(name, true);
+    }
+
+    function listConversations() {
+        if (!JWT_TOKEN || !CURRENT_USER) { return; }
+        $.ajax({
+            url: `${API_BASE_URL}/conversations?user_id=${CURRENT_USER.id}`,
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${JWT_TOKEN}` },
+            success: function(response) {
+                const conversations = response.conversations || [];
+                const list = $('#conversation-list').empty();
+                ACTIVE_CONVERSATIONS.clear();
+
+                conversations.forEach(conv => {
+                    let convName = conv.name;
+
+                    ACTIVE_CONVERSATIONS.set(conv.id, conv);
+
+                    if (!conv.is_group) {
+                        const otherParticipants = conv.participant_ids.filter(id => id !== CURRENT_USER.id);
+                        if (otherParticipants.length === 1) {
+                            convName = getUserName(otherParticipants[0]);
+                        } else {
+                            convName = "Unknown 1-on-1";
+                        }
+                    } else if (!convName) {
+                        convName = "Group Chat";
+                    }
+
+                    list.append(`
+                        <div class="conversation-item" onclick="switchConversation(${conv.id}, '${convName.replace(/'/g, "\\'")}')">
+                            [${conv.is_group ? 'GROUP' : '1-ON-1'}] ${convName} (ID: ${conv.id})
+                        </div>
+                    `);
+                });
+            },
+            error: function(xhr) {
+                log(`List conversations failed: ${xhr.status}`, 'error');
+            }
+        });
+    }
+
+    // --- 3. Chat Handlers ---
+    function switchConversation(convID, convName) {
+        CURRENT_CONVERSATION_ID = convID;
+        $('#current-conv-id').text(convID);
+        $('#current-conv-name').text(convName);
+        $('#chat-panel').show();
+        $('#messages').empty();
+        log(`Switched to Conversation: ${convName}`, 'success');
+
+        loadMessages(convID);
+    }
+
+    function loadMessages(convID) {
+        $.ajax({
+            url: `${API_BASE_URL}/messages?conversation_id=${convID}`,
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${JWT_TOKEN}` },
+            success: function(response) {
+                const messages = response.messages || [];
+                messages.forEach(msg => displayMessage(msg));
+                log(`Loaded ${messages.length} previous messages.`, 'info');
+            },
+            error: function(xhr) {
+                log(`Load messages failed: ${xhr.responseJSON ? xhr.responseJSON.error : 'Server error'}`, 'error');
+            }
+        });
+    }
+
+    function sendMessage() {
+        if (!WEBSOCKET || WEBSOCKET.readyState !== WebSocket.OPEN) {
+            log("WebSocket is not connected.", 'error');
+            return;
+        }
+        if (!CURRENT_CONVERSATION_ID) {
+            log("Please select a conversation first.", 'error');
+            return;
+        }
+
+        const content = $('#chat-input').val();
+        if (!content.trim()) return;
+
+        // Create a unique temporary ID for the optimistic update
+        const tempID = 'temp-' + Date.now();
+
+        // 1. Create the message object
+        const message = {
+            conversation_id: CURRENT_CONVERSATION_ID,
+            sender_id: CURRENT_USER.id,
+            content: content,
+            message_type: 'text',
+        };
+
+        // 2. OPTIMISTIC UPDATE: Display message immediately
+        const tempMsg = {...message, id: tempID, created_at: new Date().toISOString()};
+
+        // Store the temporary ID and its DOM element
+        const element = displayMessage(tempMsg);
+        PENDING_MESSAGES.set(tempID, element);
+
+        // 3. Send message through WebSocket
+        WEBSOCKET.send(JSON.stringify(message));
+        $('#chat-input').val('');
+    }
+
+    function displayMessage(msg) {
+        const isSent = msg.sender_id === CURRENT_USER.id;
+        const conv = ACTIVE_CONVERSATIONS.get(msg.conversation_id);
+        const isGroup = conv ? conv.is_group : false;
+        const username = getUserName(msg.sender_id);
+
+        const date = new Date(msg.created_at);
+        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const bubbleClass = isSent ? 'sent' : 'received';
+
+        const senderNameHTML = (!isSent && isGroup) ? `<span class="msg-sender">${username}</span>` : '';
+
+        const $messageHtml = $(`
+            <div class="message-bubble ${bubbleClass}" data-id="${msg.id || ''}">
+                ${senderNameHTML}
+                <span class="msg-text">${msg.content}</span>
+                <span class="msg-info">${timeStr}</span>
+            </div>
+        `);
+
+        const msgDiv = $('#messages');
+        msgDiv.append($messageHtml);
+        msgDiv.scrollTop(msgDiv[0].scrollHeight);
+
+        return $messageHtml; // Return the created element for pending tracking
+    }
+
+    // --- 4. WebSocket Handler ---
+    function connectWebSocket() {
+        if (WEBSOCKET && WEBSOCKET.readyState === WebSocket.OPEN) {
+            WEBSOCKET.close();
+        }
+
+        WEBSOCKET = new WebSocket(`${WS_BASE_URL}?user_id=${CURRENT_USER.id}`);
+
+        WEBSOCKET.onopen = function() {
+            log("WebSocket connection established.", 'success');
+        };
+
+        WEBSOCKET.onmessage = function(event) {
+            try {
+                const msg = JSON.parse(event.data);
+                if (msg.message === "connected to chat server") {
+                    log(msg.message, 'info');
+                    return;
+                }
+
+                // === 1. Handle Status Update Message Type (Login/Logout) ===
+                if (msg.type === "status_update") {
+                    log(`Status change for User ${msg.user_id}: ${msg.new_status}`, 'info');
+
+                    // Update the ALL_USERS array status
+                    const userIndex = ALL_USERS.findIndex(u => u.id === msg.user_id);
+                    if (userIndex !== -1) {
+                        ALL_USERS[userIndex].status = msg.new_status;
+                    }
+                    // Re-render the user list to show the change immediately
+                    listUsers(false);
+                    return;
+                }
+
+                // === 2. Handle Regular Chat Messages ===
+
+                // 2a. If it's an echo back of our own sent message (to confirm server insert/delivery)
+                if (msg.sender_id === CURRENT_USER.id) {
+                    let foundTemp = false;
+
+                    PENDING_MESSAGES.forEach((element, tempID) => {
+                        // Match based on content (since we can't rely on temp ID from Go server)
+                        if (element.find('.msg-text').text() === msg.content) {
+                            element.remove(); // Remove the temporary optimistic bubble
+                            PENDING_MESSAGES.delete(tempID);
+                            foundTemp = true;
+                        }
+                    });
+
+                    if (foundTemp && msg.conversation_id === CURRENT_CONVERSATION_ID) {
+                        displayMessage(msg); // Display the final, server-confirmed message
+                        return;
+                    }
+                }
+
+                // 2b. Message from another user, or an echo that wasn't matched/removed
+                if (msg.conversation_id === CURRENT_CONVERSATION_ID) {
+                    displayMessage(msg);
+                } else {
+                    // CRUCIAL: If a message arrives for a non-active conversation,
+                    // it might be a brand new conversation (group or 1-on-1) that we were just added to.
+                    log(`New message received for Conversation ID ${msg.conversation_id}. Refreshing conversations...`, 'info');
+                    listConversations();
+                }
+
+            } catch (e) {
+                log(`Error parsing message: ${e.message}`, 'error');
+            }
+        };
+
+        WEBSOCKET.onclose = function(event) {
+            log(`WebSocket connection closed. Code: ${event.code}`, 'error');
+            WEBSOCKET = null;
+        };
+
+        WEBSOCKET.onerror = function(error) {
+            log(`WebSocket error: ${error.message}`, 'error');
+        };
+    }
+
+    // Initial setup
+    $(document).ready(function() {
+        // Add Enter key listener for chat input
+        $('#chat-input').keypress(function(e) {
+            if(e.which == 13) {
+                sendMessage();
+            }
+        });
+    });
+
+</script>
+</body>
+</html>

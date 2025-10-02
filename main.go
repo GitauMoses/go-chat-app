@@ -92,6 +92,13 @@ type messageResponse struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+// StatusUpdate Add this struct near your other data models (User, Message, etc.)
+type StatusUpdate struct {
+	Type      string `json:"type"` // "status_update"
+	UserID    int64  `json:"user_id"`
+	NewStatus string `json:"new_status"`
+}
+
 type Client struct {
 	ID   int64
 	Conn *websocket.Conn
@@ -122,6 +129,48 @@ var hub = Hub{
 }
 
 // ==== Hub run loop ====
+//
+//	func (h *Hub) Run() {
+//		for {
+//			select {
+//			case client := <-h.Register:
+//				h.Clients[client.ID] = client
+//				log.Printf("User %d connected, total clients: %d", client.ID, len(h.Clients))
+//
+//			case client := <-h.Unregister:
+//				if _, ok := h.Clients[client.ID]; ok {
+//					client.Conn.Close()
+//					delete(h.Clients, client.ID)
+//					log.Printf("User %d disconnected, total clients: %d", client.ID, len(h.Clients))
+//				}
+//
+//			case message := <-h.Broadcast:
+//				// Save message to DB first
+//				msgID, err := saveMessage(message)
+//				if err != nil {
+//					log.Printf("Failed to save message: %v", err)
+//					continue
+//				}
+//				message.ID = msgID
+//				loc, _ := time.LoadLocation("Africa/Nairobi")
+//				message.CreatedAt = time.Now().In(loc).Format(time.RFC3339)
+//				// ISO string
+//
+//				// Broadcast to recipients
+//				for _, uid := range message.RecipientIDs {
+//					if c, ok := h.Clients[uid]; ok {
+//						if err := c.Conn.WriteJSON(message); err != nil {
+//							log.Printf("Error sending message to user %d: %v", uid, err)
+//							c.Conn.Close()
+//							delete(h.Clients, uid)
+//						}
+//					}
+//				}
+//			}
+//		}
+//	}
+//
+// ==== Hub run loop ====
 func (h *Hub) Run() {
 	for {
 		select {
@@ -137,14 +186,19 @@ func (h *Hub) Run() {
 			}
 
 		case message := <-h.Broadcast:
-			// Save message to DB first
-			msgID, err := saveMessage(message)
+			// Save message to DB and get recipients
+			msgID, recipientIDs, err := saveMessage(message) // <-- Capture recipientIDs
 			if err != nil {
 				log.Printf("Failed to save message: %v", err)
 				continue
 			}
 			message.ID = msgID
+
+			// CRITICAL: Set the recipients before broadcasting
+			message.RecipientIDs = recipientIDs
+
 			loc, _ := time.LoadLocation("Africa/Nairobi")
+			// Note: The original code re-calculates time here.
 			message.CreatedAt = time.Now().In(loc).Format(time.RFC3339)
 			// ISO string
 
@@ -163,7 +217,10 @@ func (h *Hub) Run() {
 }
 
 // ==== Save message to DB ====
-func saveMessage(msg Message) (int64, error) {
+//
+
+// ==== Save message to DB and fetch recipients ====
+func saveMessage(msg Message) (int64, []int64, error) { // <-- Added []int64 return
 	// Convert CreatedAt string to time.Time
 	createdAt, err := time.Parse(time.RFC3339, msg.CreatedAt)
 	if err != nil {
@@ -175,18 +232,21 @@ func saveMessage(msg Message) (int64, error) {
 		msg.ConversationID, msg.SenderID, msg.Content, msg.MessageType, createdAt,
 	)
 	if err != nil {
-		return 0, err
+		return 0, nil, err // Return nil for recipients on error
 	}
 	msgID, _ := res.LastInsertId()
 
-	// Save message status for participants
+	// --- New/Improved Logic: Fetch all participant IDs ---
+	var recipientIDs []int64
+
+	// Fetch all participants for the conversation
 	rows, err := db.Query(`
         SELECT user_id, status
         FROM conversation_participants cp
         JOIN users u ON cp.user_id = u.id
         WHERE conversation_id = ?`, msg.ConversationID)
 	if err != nil {
-		return msgID, err
+		return msgID, nil, err
 	}
 	defer rows.Close()
 
@@ -194,14 +254,18 @@ func saveMessage(msg Message) (int64, error) {
 		var uid int64
 		var status string
 		rows.Scan(&uid, &status)
+
+		recipientIDs = append(recipientIDs, uid) // Collect recipient ID
+
 		mStatus := "sent"
 		if status == "online" {
 			mStatus = "delivered"
 		}
+		// Note: The original code inserts status for *all* users, including the sender, which is fine.
 		db.Exec("INSERT INTO message_status (message_id, user_id, status) VALUES (?, ?, ?)", msgID, uid, mStatus)
 	}
 
-	return msgID, nil
+	return msgID, recipientIDs, nil // <-- Return the list of recipients
 }
 
 // ==== WebSocket handler ====
@@ -283,15 +347,16 @@ func main() {
 	// router
 	r := mux.NewRouter()
 	r.Use(corsMiddleware)
-	r.HandleFunc("/health", healthHandler).Methods("GET")
+	r.HandleFunc("/health", healthHandler).Methods("GET", "OPTIONS")
 	api := r.PathPrefix("/api").Subrouter()
-	api.HandleFunc("/register", registerHandler).Methods("POST")
-	api.HandleFunc("/login", loginHandler).Methods("POST")
-	api.HandleFunc("/users", listUsersHandler).Methods("GET")
-	api.HandleFunc("/conversations", createConversationHandler).Methods("POST")
-	api.HandleFunc("/conversations", listConversationsHandler).Methods("GET")
-	api.HandleFunc("/messages", sendMessageHandler).Methods("POST")
-	api.HandleFunc("/messages", listMessagesHandler).Methods("GET")
+	api.HandleFunc("/register", registerHandler).Methods("POST", "OPTIONS")
+	api.HandleFunc("/login", loginHandler).Methods("POST", "OPTIONS")
+	api.HandleFunc("/logout", logoutHandler).Methods("POST", "OPTIONS")
+	api.HandleFunc("/users", listUsersHandler).Methods("GET", "OPTIONS")
+	api.HandleFunc("/conversations", createConversationHandler).Methods("POST", "OPTIONS")
+	api.HandleFunc("/conversations", listConversationsHandler).Methods("GET", "OPTIONS")
+	api.HandleFunc("/messages", sendMessageHandler).Methods("POST", "OPTIONS")
+	api.HandleFunc("/messages", listMessagesHandler).Methods("GET", "OPTIONS")
 
 	r.HandleFunc("/ws", wsHandler)
 
@@ -397,6 +462,36 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	u.LastSeen = &now
 
+	// In loginHandler, after: u.LastSeen = &now
+	// ...
+	// update status online + last_seen
+	//_, _ = db.Exec("UPDATE users SET status='online', last_seen=NOW() WHERE id=?", u.ID)
+	//u.Status = "online"
+	//now := time.Now()
+	//u.LastSeen = &now
+
+	// --- ADDED: Broadcast Online Status ---
+	statusMsg := StatusUpdate{
+		Type:      "status_update",
+		UserID:    u.ID,
+		NewStatus: "online",
+	}
+	// Broadcast the status change (we'll create a dedicated broadcast channel later)
+	// For now, we can write directly to all connected clients in the Hub
+	go func() {
+		for _, client := range hub.Clients {
+			if client.ID != u.ID { // Don't send status update to self (they know they logged in)
+				if err := client.Conn.WriteJSON(statusMsg); err != nil {
+					log.Printf("Error broadcasting status update to user %d: %v", client.ID, err)
+				}
+			}
+		}
+	}()
+	// --- END ADDED ---
+
+	// create JWT token
+	// ... (rest of function)
+
 	// create JWT token
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": u.ID,
@@ -429,6 +524,169 @@ func listUsersHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{"users": users})
 }
 
+// Add this StatusUpdate struct somewhere with your other data models (e.g., User, Message)
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID int64 `json:"user_id"`
+	}
+
+	// Prioritize decoding the user_id from the POST request JSON body
+	if r.Header.Get("Content-Type") == "application/json" {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			// Fallback check for missing body, not an actual error
+			if err.Error() != "EOF" {
+				httpError(w, http.StatusBadRequest, "invalid JSON body")
+				return
+			}
+		}
+	}
+
+	// Safety check: if not found in body, check query param (for testing convenience)
+	if req.UserID == 0 {
+		userIDStr := r.URL.Query().Get("user_id")
+		if userIDStr != "" {
+			req.UserID, _ = strconv.ParseInt(userIDStr, 10, 64)
+		}
+	}
+
+	if req.UserID == 0 {
+		httpError(w, http.StatusBadRequest, "user_id is required in the JSON body or query parameter for logout")
+		return
+	}
+
+	// 1. Update status to offline and set last_seen in DB
+	_, err := db.Exec("UPDATE users SET status='offline', last_seen=NOW() WHERE id=?", req.UserID)
+	if err != nil {
+		log.Printf("Error during logout status update for user %d: %v", req.UserID, err)
+		httpError(w, http.StatusInternalServerError, "DB error during status update")
+		return
+	}
+
+	// --- START: Broadcast Offline Status to ALL Other Connected Clients ---
+	statusMsg := StatusUpdate{
+		Type:      "status_update",
+		UserID:    req.UserID,
+		NewStatus: "offline",
+	}
+
+	// Use a goroutine to prevent blocking the HTTP response
+	go func() {
+		for _, client := range hub.Clients {
+			// Only send the status update to other users, not the one logging out
+			if client.ID != req.UserID {
+				if err := client.Conn.WriteJSON(statusMsg); err != nil {
+					log.Printf("Error broadcasting status update to user %d: %v", client.ID, err)
+					// If the write fails, assume the connection is dead and clean up
+					hub.Unregister <- client
+				}
+			}
+		}
+	}()
+	// --- END: Broadcast Offline Status ---
+
+	// 2. Forcibly close the WebSocket connection in the Hub
+	if client, ok := hub.Clients[req.UserID]; ok {
+		// This sends the client to the Unregister channel, which cleans up the Hub map and closes the connection.
+		hub.Unregister <- client
+	} else {
+		log.Printf("User %d was logged out via API but was not found in the Hub clients map.", req.UserID)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"message": "logged out successfully, status set to offline"})
+}
+
+// logoutHandler updates user status to 'offline' and invalidates the session (conceptually).
+// This expects the user's ID to be passed, typically via a JWT in a real-world app,
+// but for simplicity, we'll use a query parameter or body payload.
+// logoutHandler updates user status to 'offline' and closes the WebSocket connection.
+//func logoutHandler(w http.ResponseWriter, r *http.Request) {
+//	var req struct {
+//		UserID int64 `json:"user_id"`
+//	}
+//
+//	// Prioritize decoding the user_id from the POST request JSON body
+//	if r.Header.Get("Content-Type") == "application/json" {
+//		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+//			// Fallback check for missing body, not an actual error
+//			if err.Error() != "EOF" {
+//				httpError(w, http.StatusBadRequest, "invalid JSON body")
+//				return
+//			}
+//		}
+//	}
+//
+//	// Safety check: if not found in body, check query param (for testing convenience)
+//	if req.UserID == 0 {
+//		userIDStr := r.URL.Query().Get("user_id")
+//		if userIDStr != "" {
+//			req.UserID, _ = strconv.ParseInt(userIDStr, 10, 64)
+//		}
+//	}
+//
+//	if req.UserID == 0 {
+//		httpError(w, http.StatusBadRequest, "user_id is required in the JSON body or query parameter for logout")
+//		return
+//	}
+//
+//	// 1. Update status to offline and set last_seen in DB
+//	_, err := db.Exec("UPDATE users SET status='offline', last_seen=NOW() WHERE id=?", req.UserID)
+//	if err != nil {
+//		log.Printf("Error during logout status update for user %d: %v", req.UserID, err)
+//		httpError(w, http.StatusInternalServerError, "DB error during status update")
+//		return
+//	}
+//
+//	// 2. Forcibly close the WebSocket connection in the Hub
+//	if client, ok := hub.Clients[req.UserID]; ok {
+//		// This sends the client to the Unregister channel, which cleans up the Hub map and closes the connection.
+//		hub.Unregister <- client
+//		// CRITICAL NOTE: The connection removal is handled in the Hub.Run loop now.
+//	} else {
+//		log.Printf("User %d was logged out via API but was not found in the Hub clients map.", req.UserID)
+//	}
+//
+//	respondJSON(w, http.StatusOK, map[string]string{"message": "logged out successfully, status set to offline"})
+//}
+
+// creating conversations
+//func createConversationHandler(w http.ResponseWriter, r *http.Request) {
+//	var req createConversationRequest
+//	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+//		httpError(w, http.StatusBadRequest, "invalid JSON body")
+//		return
+//	}
+//
+//	if len(req.ParticipantIDs) < 2 {
+//		httpError(w, http.StatusBadRequest, "at least 2 participants required")
+//		return
+//	}
+//
+//	// Insert into conversations
+//	res, err := db.Exec("INSERT INTO conversations (name, is_group) VALUES (?, ?)",
+//		sql.NullString{String: req.Name, Valid: req.IsGroup}, req.IsGroup)
+//	if err != nil {
+//		httpError(w, http.StatusInternalServerError, "db error: "+err.Error())
+//		return
+//	}
+//
+//	convID, _ := res.LastInsertId()
+//
+//	// Insert participants
+//	for _, uid := range req.ParticipantIDs {
+//		_, _ = db.Exec("INSERT INTO conversation_participants (conversation_id, user_id) VALUES (?, ?)", convID, uid)
+//	}
+//
+//	resp := conversationResponse{
+//		ID:             convID,
+//		Name:           req.Name,
+//		IsGroup:        req.IsGroup,
+//		ParticipantIDs: req.ParticipantIDs,
+//		CreatedAt:      time.Now(),
+//	}
+//
+//	respondJSON(w, http.StatusCreated, map[string]any{"conversation": resp})
+//}
+
 // creating conversations
 func createConversationHandler(w http.ResponseWriter, r *http.Request) {
 	var req createConversationRequest
@@ -442,7 +700,51 @@ func createConversationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Insert into conversations
+	// --- START: Uniqueness Check for 1-on-1 Chats ---
+	if !req.IsGroup && len(req.ParticipantIDs) == 2 {
+		u1 := req.ParticipantIDs[0]
+		u2 := req.ParticipantIDs[1]
+
+		// Ensure u1 is the smaller ID for canonical ordering
+		if u1 > u2 {
+			u1, u2 = u2, u1
+		}
+
+		// Find existing 1-on-1 conversation
+		var existingConvID int64
+		err := db.QueryRow(`
+            SELECT c.id FROM conversations c
+            JOIN conversation_participants cp1 ON cp1.conversation_id = c.id AND cp1.user_id = ?
+            JOIN conversation_participants cp2 ON cp2.conversation_id = c.id AND cp2.user_id = ?
+            WHERE c.is_group = 0 AND 
+                  (SELECT COUNT(*) FROM conversation_participants WHERE conversation_id = c.id) = 2
+            LIMIT 1
+        `, u1, u2).Scan(&existingConvID)
+
+		if err != nil && err != sql.ErrNoRows {
+			httpError(w, http.StatusInternalServerError, "db error during uniqueness check: "+err.Error())
+			return
+		}
+
+		if existingConvID > 0 {
+			// Found existing conversation, retrieve and return it
+			c := conversationResponse{}
+			var name sql.NullString
+			err := db.QueryRow("SELECT id, name, is_group, created_at FROM conversations WHERE id = ?", existingConvID).
+				Scan(&c.ID, &name, &c.IsGroup, &c.CreatedAt)
+			if err == nil {
+				if name.Valid {
+					c.Name = name.String
+				}
+				c.ParticipantIDs = req.ParticipantIDs
+				respondJSON(w, http.StatusOK, map[string]any{"conversation": c, "message": "Conversation already exists"})
+				return
+			}
+		}
+	}
+	// --- END: Uniqueness Check ---
+
+	// Insert into conversations (Only runs if no existing 1-on-1 chat was found)
 	res, err := db.Exec("INSERT INTO conversations (name, is_group) VALUES (?, ?)",
 		sql.NullString{String: req.Name, Valid: req.IsGroup}, req.IsGroup)
 	if err != nil {
